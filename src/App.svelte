@@ -42,7 +42,7 @@
 
     $: selectedCount = tracks.filter((track) => selectedYears[selectionKey(track.artist, track.year)]).length;
     $: suggestions = guess.trim()
-        ? gameTracks.filter(
+        ? tracks.filter(
             (track) =>
                 normalize(track.title).includes(normalize(guess)) ||
                 normalize(track.release).includes(normalize(guess)),
@@ -98,7 +98,7 @@
         gameTracks = tracks.filter((track) => selectedYears[selectionKey(track.artist, track.year)]);
         const assetPaths = [
             ...gameTracks.map((track) => track.audioPath),
-            ...new Set(gameTracks.map((track) => track.coverPath)),
+            ...new Set(tracks.map((track) => track.coverPath)),
         ];
         const queue = [...assetPaths];
         const createdUrls: string[] = [];
