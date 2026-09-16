@@ -1,0 +1,32 @@
+@layer theme, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+.game-panel {
+    max-width: 28rem;
+    margin: max(0.5rem, calc((100vh - 36rem) / 2)) auto;
+    border: 1px solid #BBBBBB;
+    border-radius: 4px;
+}
+
+.suggestions {
+  color: CanvasText;
+  background: Canvas;
+  border: 1px solid ButtonBorder;
+  border-radius: 4px;
+  overflow: hidden auto;
+}
+
+.suggestion {
+    color: CanvasText;
+    background: Canvas;
+    border: 0;
+    border-bottom: 1px solid ButtonBorder;
+}
+
+.suggestion:hover,
+.suggestion:focus-visible {
+    color: HighlightText;
+    background: Highlight;
+}

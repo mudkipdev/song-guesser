@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.bun-tmp/
+.bun-install/
+.DS_Store
+
+data/
+scripts/
+public/covers/
+public/music/
+src/lib/tracks.generated.json
