@@ -51,16 +51,16 @@
                 .map((track) => track.artist),
         ),
     );
-    const suggestions = $derived(
-        guess.trim()
-            ? tracks.filter(
-                (track) =>
-                    selectedArtists.has(track.artist) &&
-                    (normalize(track.title).includes(normalize(guess)) ||
-                        normalize(track.release).includes(normalize(guess))),
-            )
-            : [],
-    );
+    const suggestions = $derived.by(() => {
+        const query = normalize(guess);
+        if (!query) return [] as Track[];
+        return tracks
+            .filter((track) => selectedArtists.has(track.artist))
+            .map((track) => ({ track, score: suggestionScore(track, query) }))
+            .filter(({ score }) => Number.isFinite(score))
+            .sort((left, right) => left.score - right.score)
+            .map(({ track }) => track);
+    });
 
     function selectionKey(artist: string, year: number): string {
         return `${artist}:${year}`;
@@ -167,6 +167,16 @@
             .normalize("NFKD")
             .replace(/[\u0300-\u036f]/g, "")
             .replace(/[^a-z0-9]/g, "");
+    }
+
+    function suggestionScore(track: Track, query: string): number {
+        const title = normalize(track.title);
+        const release = normalize(track.release);
+        if (title.startsWith(query)) return 0;
+        if (title.includes(query)) return 1;
+        if (release.startsWith(query)) return 2;
+        if (release.includes(query)) return 3;
+        return Number.POSITIVE_INFINITY;
     }
 
     async function playClip() {
