@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onDestroy, onMount, tick } from "svelte";
+    import { tick } from "svelte";
 
     type Track = {
         id: string;
@@ -17,37 +17,50 @@
     const assetBaseUrl = "https://music.mudkip.dev/";
     const assetUrls = new Map<string, string>();
 
-    let tracks: Track[] = [];
-    let artists: string[] = [];
-    let yearsByArtist = new Map<string, number[]>();
-    let selectedYears: Record<string, boolean> = {};
-    let libraryLoading = true;
-    let libraryError = "";
-    let gameTracks: Track[] = [];
-    let downloading = false;
-    let downloaded = 0;
-    let downloadTotal = 0;
-    let downloadError = "";
+    let tracks = $state<Track[]>([]);
+    let artists = $state<string[]>([]);
+    let yearsByArtist = $state(new Map<string, number[]>());
+    let selectedYears = $state<Record<string, boolean>>({});
+    let libraryLoading = $state(true);
+    let libraryError = $state("");
+    let gameTracks = $state<Track[]>([]);
+    let downloading = $state(false);
+    let downloaded = $state(0);
+    let downloadTotal = $state(0);
+    let downloadError = $state("");
+    let current = $state<Track | undefined>(undefined);
+    let stage = $state(0);
+    let guess = $state("");
+    let searchOpen = $state(false);
+    let status = $state("");
+    let finished = $state(false);
+    let playing = $state(false);
+    let audio = $state<HTMLAudioElement | undefined>(undefined);
+
     let previousId = "";
-    let current: Track | undefined;
-    let stage = 0;
-    let guess = "";
-    let searchOpen = false;
-    let status = "";
-    let finished = false;
-    let playing = false;
     let fullPlayback = false;
-    let audio: HTMLAudioElement;
     let stopTimer: ReturnType<typeof setTimeout> | undefined;
 
-    $: selectedCount = tracks.filter((track) => selectedYears[selectionKey(track.artist, track.year)]).length;
-    $: suggestions = guess.trim()
-        ? tracks.filter(
-            (track) =>
-                normalize(track.title).includes(normalize(guess)) ||
-                normalize(track.release).includes(normalize(guess)),
-        )
-        : [];
+    const selectedCount = $derived(
+        tracks.filter((track) => selectedYears[selectionKey(track.artist, track.year)]).length,
+    );
+    const selectedArtists = $derived(
+        new Set(
+            tracks
+                .filter((track) => selectedYears[selectionKey(track.artist, track.year)])
+                .map((track) => track.artist),
+        ),
+    );
+    const suggestions = $derived(
+        guess.trim()
+            ? tracks.filter(
+                (track) =>
+                    selectedArtists.has(track.artist) &&
+                    (normalize(track.title).includes(normalize(guess)) ||
+                        normalize(track.release).includes(normalize(guess))),
+            )
+            : [],
+    );
 
     function selectionKey(artist: string, year: number): string {
         return `${artist}:${year}`;
@@ -98,7 +111,11 @@
         gameTracks = tracks.filter((track) => selectedYears[selectionKey(track.artist, track.year)]);
         const assetPaths = [
             ...gameTracks.map((track) => track.audioPath),
-            ...new Set(tracks.map((track) => track.coverPath)),
+            ...new Set(
+                tracks
+                    .filter((track) => selectedArtists.has(track.artist))
+                    .map((track) => track.coverPath),
+            ),
         ];
         const queue = [...assetPaths];
         const createdUrls: string[] = [];
@@ -155,6 +172,7 @@
     async function playClip() {
         stopClip();
         fullPlayback = false;
+        if (!audio) return;
         audio.currentTime = 0;
 
         try {
@@ -173,6 +191,7 @@
     async function playFullSong() {
         stopClip();
         fullPlayback = true;
+        if (!audio) return;
         audio.currentTime = 0;
 
         try {
@@ -240,7 +259,7 @@
         status = "";
         finished = false;
         await tick();
-        audio.load();
+        audio?.load();
         await playClip();
     }
 
@@ -250,13 +269,15 @@
         searchOpen = false;
     }
 
-    onMount(() => {
+    $effect(() => {
         void loadLibrary();
     });
 
-    onDestroy(() => {
-        stopClip();
-        for (const objectUrl of assetUrls.values()) URL.revokeObjectURL(objectUrl);
+    $effect(() => {
+        return () => {
+            stopClip();
+            for (const objectUrl of assetUrls.values()) URL.revokeObjectURL(objectUrl);
+        };
     });
 </script>
 
@@ -277,7 +298,7 @@
                             type="checkbox"
                             checked={artistSelection(artist).all}
                             indeterminate={artistSelection(artist).some && !artistSelection(artist).all}
-                            on:change={(event) => toggleArtist(artist, event.currentTarget.checked)}
+                            onchange={(event) => toggleArtist(artist, event.currentTarget.checked)}
                         />
                         {artist}
                     </label>
@@ -288,7 +309,7 @@
                                 <input
                                     type="checkbox"
                                     checked={selectedYears[selectionKey(artist, year)]}
-                                    on:change={(event) => toggleYear(artist, year, event.currentTarget.checked)}
+                                    onchange={(event) => toggleYear(artist, year, event.currentTarget.checked)}
                                 />
                                 {year}
                             </label>
@@ -297,7 +318,7 @@
                 </section>
             {/each}
 
-            <button class="mt-6 min-h-10 px-5" type="button" disabled={selectedCount === 0 || downloading} on:click={startGame}>
+            <button class="mt-6 min-h-10 px-5" type="button" disabled={selectedCount === 0 || downloading} onclick={startGame}>
                 {downloading ? `Downloading (${downloaded}/${downloadTotal} songs)` : `Start (${selectedCount} songs)`}
             </button>
             {#if downloading}
@@ -309,18 +330,24 @@
                 bind:this={audio}
                 src={assetUrls.get(current.audioPath)}
                 preload="auto"
-                on:play={startClipTimer}
-                on:ended={stopClip}
+                onplay={startClipTimer}
+                onended={stopClip}
             ></audio>
 
             {#if !finished}
                 <div class="mt-4 text-center">
-                    <button class="box-border min-h-10 w-36 px-3" type="button" on:click={playing ? stopClip : playClip}>
+                    <button class="box-border min-h-10 w-36 px-3" type="button" onclick={playing ? stopClip : playClip}>
                         {playing ? "Stop" : "Play"}
                     </button>
                 </div>
 
-                <form class="mt-4" on:submit|preventDefault={submitGuess}>
+                <form
+                    class="mt-4"
+                    onsubmit={(event) => {
+                        event.preventDefault();
+                        submitGuess();
+                    }}
+                >
                     <div class="relative mx-auto mt-2 w-full max-w-sm">
                         <input
                             class="box-border min-h-10 w-full px-2"
@@ -331,12 +358,12 @@
                             aria-autocomplete="list"
                             aria-expanded={searchOpen && suggestions.length > 0}
                             aria-controls="song-suggestions"
-                            on:focus={() => (searchOpen = true)}
-                            on:input={() => {
+                            onfocus={() => (searchOpen = true)}
+                            oninput={() => {
                                 status = "";
                                 searchOpen = true;
                             }}
-                            on:blur={() => (searchOpen = false)}
+                            onblur={() => (searchOpen = false)}
                         />
 
                         {#if searchOpen && suggestions.length > 0}
@@ -346,7 +373,10 @@
                                         <button
                                             class="suggestion box-border flex min-h-16 w-full items-center gap-3 p-2 text-left"
                                             type="button"
-                                            on:mousedown|preventDefault={() => chooseSuggestion(track)}
+                                            onmousedown={(event) => {
+                                                event.preventDefault();
+                                                chooseSuggestion(track);
+                                            }}
                                         >
                                             <img class="size-12 shrink-0 object-cover" src={assetUrls.get(track.coverPath)} alt="" />
                                             <span class="min-w-0">
@@ -361,7 +391,7 @@
                     </div>
                     <div class="mt-4 flex justify-center gap-2">
                         <button class="box-border min-h-10 w-28 px-3" type="submit" disabled={!guess.trim()}>Submit</button>
-                        <button class="box-border min-h-10 w-28 px-3" type="button" on:click={skip}>{stage < stages.length - 1 ? "Skip" : "Reveal"}</button>
+                        <button class="box-border min-h-10 w-28 px-3" type="button" onclick={skip}>{stage < stages.length - 1 ? "Skip" : "Reveal"}</button>
                     </div>
                 </form>
 
@@ -374,7 +404,7 @@
                     <h2 class="mb-0">{current.title}</h2>
                     <p class="mt-1">{current.release}</p>
                     <output class="mt-4 block" aria-live="polite">{status}</output>
-                    <button class="mt-4 box-border min-h-10 w-28 px-3" type="button" on:click={nextSong}>Next song</button>
+                    <button class="mt-4 box-border min-h-10 w-28 px-3" type="button" onclick={nextSong}>Next song</button>
                 </div>
             {/if}
         {/if}
